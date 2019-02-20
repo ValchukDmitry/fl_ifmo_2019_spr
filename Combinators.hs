@@ -1,6 +1,10 @@
 module Combinators where
 
-import Prelude hiding (fail, fmap)
+import qualified Prelude
+import Prelude hiding (fail, fmap, (<*>), (>>=))
+import Control.Applicative (Alternative)
+import qualified Control.Applicative (empty, (<|>))
+
 
 -- Parsing result is some payload and a suffix of the input which is yet to be parsed
 newtype Parser str ok = Parser { runParser :: str -> Maybe (str, ok) }
@@ -25,42 +29,92 @@ p <|> q = Parser $ \s ->
 -- If the first does not succeed then the second one is never tried
 -- The result is collected into a pair
 seq :: Parser str a -> Parser str b -> Parser str (a, b)
-p `seq` q = undefined
+p `seq` q = Parser $ \s ->
+  case runParser p s of
+    Nothing -> Nothing
+    Just (s', x) -> case runParser q s' of
+      Nothing -> Nothing
+      Just (s'', x') -> Just (s'', (x, x'))
+
 
 -- Monadic sequence combinator
 (>>=) :: Parser str a -> (a -> Parser str b) -> Parser str b
-p >>= q = undefined
+p >>= q = Parser $ \s ->
+  case runParser p s of
+    Nothing -> Nothing
+    Just (s', x) -> case runParser (q x) s' of
+      Nothing -> Nothing
+      Just (s'', x') -> Just (s'', x')
 
 -- Applicative sequence combinator
 (<*>) :: Parser str (a -> b) -> Parser str a -> Parser str b
-p <*> q = undefined
+p <*> q = Parser $ \s ->
+  case runParser p s of
+    Nothing -> Nothing
+    Just (s', x) -> case runParser q s' of
+      Nothing -> Nothing
+      Just (s'', x') -> Just (s'', x x')
+
 
 -- Applies a function to the parsing result, if parser succeedes
 fmap :: (a -> b) -> Parser str a -> Parser str b
 fmap f p = Parser $ \s ->
   case runParser p s of
+    Nothing -> Nothing
     Just (s', a) -> Just (s', f a)
-    _ -> Nothing
 
 -- Applies a parser once or more times
 some :: Parser str a -> Parser str [a]
-some p = undefined
+some p = ((:) <$> p) <*> many p
 
 -- Applies a parser zero or more times
 many :: Parser str a -> Parser str [a]
-many p = undefined
+many p = manyInner where
+  manyInner = someInner <|> success []
+  someInner = ((:) <$> p) <*> manyInner
 
--- Parses keywords 
+-- Parses keywords
+
+buildTrie kws = foldl insert (Trie False []) kws
+
 keywords :: [String] -> Parser String String
-keywords kws = undefined
+keywords kws = Parser $ \s -> process s (buildTrie kws) ""
+    where
+      process [] (Trie True _) str = Just ([], str)
+      process [] _ _ = Nothing
+      process (' ':xs) (Trie True _) str = Just (' ':xs, str)
+      process (' ':xs) _ _ = Nothing
+      process (x:xs) trie str = case step trie x of
+                                         Nothing -> Nothing
+                                         Just ve -> process xs ve (str ++ [x])
 
--- Checks if the first element of the input is the given token
-token :: Eq token => token -> Parser [token] token
-token t = Parser $ \s ->
-  case s of
-    (t' : s') | t == t' -> Just (s', t)
-    _ -> Nothing
+data Trie key = Trie Bool [(key, Trie key)]
 
--- Checks if the first character of the string is the one given
-char :: Char -> Parser String Char
-char = token
+empty = Trie False []
+
+insert :: (Eq k) => Trie k -> [k] -> Trie k
+insert (Trie _ edges) []     = Trie True edges
+insert (Trie t edges) (x:xs) = case lookup x edges of
+                                Nothing -> Trie t $ (x, insert empty xs):edges
+                                Just ve -> Trie t (insertEdge <$> edges)
+                                where
+                                  insertEdge (xkey, trie) =
+                                    if xkey == x then (xkey, insert trie xs) else (xkey, trie)
+
+step (Trie _ edges) key = lookup key edges
+
+instance Prelude.Functor (Parser s) where
+  fmap = fmap
+
+instance Prelude.Applicative (Parser s) where
+  pure = success
+  (<*>) = (<*>)
+
+instance Alternative (Parser s) where
+  empty = fail
+  (<|>) = (<|>)
+
+instance Prelude.Monad (Parser s) where
+  return = pure
+  (>>=) = (>>=)
+  fail = const fail
