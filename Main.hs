@@ -2,6 +2,7 @@ module Main where
 
 import System.Environment
 import Automaton
+import Combinators
 
 main :: IO ()
 main = do
