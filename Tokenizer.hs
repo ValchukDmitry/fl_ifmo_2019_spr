@@ -7,7 +7,7 @@ import Data.Char
 
 data Token = Ident String
            | KeyWord String
-           | Number Int  -- Change Number type if you work with something other than Int
+           | Number Integer  -- Change Number type if you work with something other than Int
            deriving (Show, Eq)
 
 satisfy :: (token -> Bool) -> Parser [token] token
@@ -30,12 +30,13 @@ tokenize input = case runParser (many finalParser <* eof) input of
     Just (_, tokens) -> tokens
     _ -> []
 
-finalParser = ((KeyWord <$> parseKeyWord) <|>
-            (Number <$> parseNumber) <|>
-            (Ident <$> parseIdent)) <* end
+finalParser = ((spaces *> (KeyWord <$> parseKeyWord)) <|>
+            (spaces *> (Number <$> parseNumber)) <|>
+            (spaces *> (Ident <$> parseIdent))) <* end
                 where
                     end = unt (some $ token ' ') eof where
                         unt a b = (const () <$> a) <|> (const () <$> b)
+                    spaces = many $ token ' '
 
 parseKeyWord :: Parser String String
 keyWords =
@@ -52,7 +53,7 @@ parseIdent = do
     xs <- many ((satisfy isLetter) <|> (token '_') <|> (satisfy isDigit))
     return (x:xs)
 
-parseNumber :: Parser String Int
+parseNumber :: Parser String Integer
 parseNumber = fmap (read) $
     keywords ["0"] <|>
     do

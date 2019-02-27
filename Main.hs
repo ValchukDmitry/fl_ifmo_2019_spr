@@ -33,7 +33,8 @@ validTests = [
   ("hello world", [Ident "hello", Ident "world"]),
   ("1234 hello", [Number 1234, Ident "hello"]),
   ("for if 1234 1234          hello", [KeyWord "for", KeyWord "if", Number (1234), Number 1234, Ident "hello"]),
-  ("1 2 33 4   2222222", [Number 1, Number 2, Number (33), Number 4, Number 2222222]),
+  (" 1 2 33 4   2222222", [Number 1, Number 2, Number (33), Number 4, Number 2222222]),
+  ("12345678901234567890", [Number 12345678901234567890]),
   ("0", [Number 0]),
   ("_hello", [Ident "_hello"])]
 
