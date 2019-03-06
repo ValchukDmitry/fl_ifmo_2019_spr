@@ -1,5 +1,6 @@
 module Combinators where
 
+  import Data.Char (isSpace)
   import qualified Prelude
   import Prelude hiding (fail, fmap, (<*>), (>>=))
   import Control.Applicative (Alternative)
@@ -78,15 +79,20 @@ module Combinators where
   buildTrie kws = foldl insert (Trie False []) kws
 
   keywords :: [String] -> Parser String String
-  keywords kws = Parser $ \s -> process s (buildTrie kws) ""
+  keywords = keywordsWithDelims (==' ')
+
+  keywordsWithDelims :: (Char -> Bool) -> [String] -> Parser String String
+  keywordsWithDelims isDelim kws = Parser $ \s -> process s (buildTrie kws) ""
       where
         process [] (Trie True _) str = Just ([], str)
         process [] _ _ = Nothing
-        process (' ':xs) (Trie True _) str = Just (' ':xs, str)
-        process (' ':xs) _ _ = Nothing
-        process (x:xs) trie str = case step trie x of
-                                           Nothing -> Nothing
-                                           Just ve -> process xs ve (str ++ [x])
+        process (x:xs) trie str | isDelim x = processDelims (x:xs) trie str
+                                | otherwise = case step trie x of
+                                                Nothing -> Nothing
+                                                Just ve -> process xs ve (str ++ [x])
+          where
+            processDelims (x:xs) (Trie True _) str = Just (x:xs, str)
+            processDelims (x:xs) _ _ = Nothing
 
   data Trie key = Trie Bool [(key, Trie key)]
 
@@ -125,9 +131,9 @@ module Combinators where
       f (c:cs) | pr c  = Just (cs,c)
       f _              = Nothing
 
-  spaces = many (satisfy (==' '))
-  parseList :: Parser String elem -> Parser String delim -> Parser String lbr -> Parser String rbr -> Int -> Parser String [elem]
-  parseList elem delim lbr rbr minCount =
+  spaces = many (satisfy isSpace)
+  parseList :: Parser String elem -> Parser String delim -> Parser String lbr -> Parser String rbr -> (Int -> Bool) -> Parser String [elem]
+  parseList elem delim lbr rbr countPredicate =
     let parseItem = spaces *> elem <* (spaces) <* delim in
     let parseLast = spaces *> elem <* spaces in
     let parseItems = many parseItem in
@@ -136,7 +142,7 @@ module Combinators where
         items <- parseItems
         last <- parseLast
         rbr
-        if length items >= (minCount - 1) then
+        if countPredicate (length items + 1) then
           return $ items ++ [last]
         else
           fail

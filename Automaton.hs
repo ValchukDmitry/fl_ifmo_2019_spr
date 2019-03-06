@@ -25,33 +25,37 @@ data Automaton s q = Automaton { sigma     :: Set s
 -- * Delta function is defined on not-a-state or not-a-symbol-from-sigma
 -- Pick appropriate types for s and q
 delimiterParser = satisfy (==',')
-string = some $ satisfy isLetter
-automatonPartParser elem minCount = parseList elem (satisfy (==',')) (satisfy (=='<')) (satisfy (=='>')) minCount
-nextPart = satisfy (==',')
 
-deltaInnerParser elem1 elem2 = parseList (elem1 <|> elem2) (satisfy (==',')) (satisfy (=='(')) (satisfy (==')')) 3
+bracketsAndDelimiters = [',', '(', ')', '<', '>']
+checkDelimiter = (\x -> (isSpace x) || (elem x bracketsAndDelimiters))
+elems = some $ satisfy (\x -> not (isSpace x) && (not $ elem x bracketsAndDelimiters))
+automatonPartParser elem minCount = parseList elem (satisfy (==',')) (satisfy (=='<')) (satisfy (=='>')) minCount
+nextPart = (many $ satisfy isSpace) *> satisfy (==',') <* (many $ satisfy isSpace)
+
+deltaInnerParser elem1 elem2 = parseList (elem1 <|> elem2) (satisfy (==',')) (satisfy (=='(')) (satisfy (==')')) (==3)
 
 parseAutomaton :: String -> Maybe (Automaton String String)
 parseAutomaton s = snd <$> (runParser parserAutomaton s) where
     parserAutomaton = do
-        sigmas <- automatonPartParser string 1
+        sigmas <- automatonPartParser elems (>=1)
         let sigma = Set.fromList sigmas
         nextPart
-        states <- automatonPartParser string 1
+        states <- automatonPartParser elems (>=1)
         let state = Set.fromList states
         nextPart
-        initStates <- automatonPartParser string 1
+        initStates <- automatonPartParser (keywordsWithDelims checkDelimiter states) (==1)
         let initState = Set.fromList initStates
         nextPart
-        termStates <- automatonPartParser string 0
+        termStates <- automatonPartParser (keywordsWithDelims checkDelimiter states) (>=0)
         let termState = Set.fromList termStates
         nextPart
 
-        deltas <- automatonPartParser (deltaInnerParser string string) 0
-        let deltaK1 = (\x-> x!!0) <$> deltas
-        let deltaK2 = (\x-> x!!1) <$> deltas
-        let deltaValue = (\x-> Just $ x!!2) <$> deltas
+        deltas <- automatonPartParser (deltaInnerParser elems elems) (>=0)
+        let delta = Map.fromList $ (\[x0, x1, x2] -> ((x0, x1), Just x2)) <$> deltas
+        if checkDeltas states sigmas deltas then
+            return (Automaton sigma state (head initStates) termState delta)
+        else
+            Combinators.fail
 
-        let delta = Map.fromList $ zip (zip deltaK1 deltaK2) deltaValue
-        return (Automaton sigma state (head initStates) termState delta)
-
+checkDeltas states sigmas [] = True
+checkDeltas states sigmas ((s1:c:s2:[]):xs) = elem s1 states && elem s2 states && elem c sigmas && checkDeltas states sigmas xs
