@@ -12,14 +12,14 @@ module Combinators where
   data Stream token = Stream {stream::[token], position::Location}
 
   initStream :: [token] -> Stream token
-  initStream token = Stream token (Location 0 0)
+  initStream token = Stream token (Location 1 1)
 
   next :: Stream token -> Maybe token
   next (Stream [] _) = Nothing
   next (Stream (x:xs) _) = Just x
 
   streamStep :: Stream Char -> Stream Char
-  streamStep (Stream (x:xs) (Location l c)) | x=='\n' = Stream xs (Location (l+1) 0)
+  streamStep (Stream (x:xs) (Location l c)) | x == '\n' = Stream xs (Location (l+1) 1)
                                             | otherwise = Stream xs (Location l (c+1))
   streamStep (Stream [] loc) = Stream [] loc
 

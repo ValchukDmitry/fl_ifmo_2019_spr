@@ -44,6 +44,7 @@ parseAutomaton :: String -> Either [ParsingError String] (Automaton String Strin
 parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
     where
         parserAutomaton = do
+            spaces
             sigmas <- automatonPartParser elemsParser (>=1)
             let sigma = Set.fromList sigmas
             nextPart
@@ -59,6 +60,7 @@ parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
 
             deltas <- automatonPartParser (deltaInnerParser elemsParser elemsParser) (>=0)
             let delta = (\[x0, x1, x2] -> Delta x0 x1 x2) <$> deltas
+            spaces
             end
             if checkDeltas states sigmas deltas then
                 return (Automaton sigma state (head initStates) termState delta)
@@ -84,3 +86,5 @@ isComplete (Automaton sigma states _ _ deltas) = and $
                                                     y <- Set.elems states] -- all posible deltas
 
 isMinimal = const True
+
+
