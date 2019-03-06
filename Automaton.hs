@@ -52,6 +52,7 @@ parseAutomaton s = snd <$> (runParser parserAutomaton s) where
 
         deltas <- automatonPartParser (deltaInnerParser elems elems) (>=0)
         let delta = Map.fromList $ (\[x0, x1, x2] -> ((x0, x1), Just x2)) <$> deltas
+        end
         if checkDeltas states sigmas deltas then
             return (Automaton sigma state (head initStates) termState delta)
         else

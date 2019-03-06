@@ -131,6 +131,14 @@ module Combinators where
       f (c:cs) | pr c  = Just (cs,c)
       f _              = Nothing
 
+  end :: Parser [token] ()
+  end = Parser $ \s -> case s of
+    [] -> Just ([], ())
+    _  -> Nothing
+
+  try :: Parser String a -> Parser String (Maybe a)
+  try prs = fmap Just prs <|> success Nothing
+
   spaces = many (satisfy isSpace)
   parseList :: Parser String elem -> Parser String delim -> Parser String lbr -> Parser String rbr -> (Int -> Bool) -> Parser String [elem]
   parseList elem delim lbr rbr countPredicate =
@@ -140,10 +148,14 @@ module Combinators where
       do
         lbr
         items <- parseItems
-        last <- parseLast
+        last <- try parseLast
         rbr
-        if countPredicate (length items + 1) then
-          return $ items ++ [last]
+        let res = case last of
+                    Nothing -> items
+                    Just x -> items ++ [x]
+
+        if countPredicate (length res) then
+          return res
         else
           fail
 
