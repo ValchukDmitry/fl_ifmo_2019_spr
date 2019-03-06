@@ -6,11 +6,12 @@ import qualified Data.Map.Lazy as Map
 import qualified Data.Set as Set
 import Data.Char
 import Data.List (sort)
+import Data.Maybe (isNothing)
 
 type Set = Set.Set
 type Map = Map.Map
 
-data Delta s q = Delta q s q deriving Show
+data Delta s q = Delta q s (Maybe q) deriving Show
 
 instance (Eq s, Eq q) => Eq (Delta s q) where
     (Delta f s t) == (Delta f' s' t') = f==f' && s==s'
@@ -38,6 +39,8 @@ elemsParser = some $ satisfy (\x -> not (isSpace x) && (not $ elem x bracketsAnd
 automatonPartParser elem minCount = parseList elem (satisfy (==',')) (satisfy (=='<')) (satisfy (=='>')) minCount
 nextPart = (many $ satisfy isSpace) *> satisfy (==',') <* (many $ satisfy isSpace)
 
+epsilonParser = keywordsWithDelims checkDelimiter ["\\epsilon"]
+
 deltaInnerParser elem1 elem2 = parseList (elem1 <|> elem2) (satisfy (==',')) (satisfy (=='(')) (satisfy (==')')) (==3)
 
 parseAutomaton :: String -> Either [ParsingError String] (Automaton String String)
@@ -58,8 +61,12 @@ parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
             let termState = Set.fromList termStates
             nextPart
 
-            deltas <- automatonPartParser (deltaInnerParser elemsParser elemsParser) (>=0)
-            let delta = (\[x0, x1, x2] -> Delta x0 x1 x2) <$> deltas
+            deltas <- automatonPartParser (deltaInnerParser elemsParser epsilonParser) (>=0)
+            let delta = (\[x0, x1, x2] ->
+                    if x2 == "\\epsilon"
+                        then Delta x0 x1 Nothing
+                        else Delta x0 x1 (Just x2)) <$>
+                        deltas
             spaces
             end
             if checkDeltas states sigmas deltas then
@@ -68,10 +75,15 @@ parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
                 fail $ "bad deltas"
 
 checkDeltas states sigmas [] = True
-checkDeltas states sigmas ((s1:c:s2:[]):xs) = elem s1 states && elem s2 states && elem c sigmas && checkDeltas states sigmas xs
+checkDeltas states sigmas ((s1:c:s2:[]):xs) = elem s1 states &&
+                                            (elem s2 states || s2=="\\epsilon") &&
+                                            elem c sigmas &&
+                                            checkDeltas states sigmas xs
 
 isDFA :: (Eq s, Eq q) => Automaton s q -> Bool
-isDFA (Automaton _ _ _ _ deltas) = checkUnique deltas where
+isDFA (Automaton _ _ _ _ deltas) = checkUnique deltas &&
+                                    foldr (\(Delta f c t) r -> r && (not $ isNothing t)) True deltas
+    where
     checkUnique :: (Eq s, Eq q) => [Delta s q] -> Bool
     checkUnique [] = True
     checkUnique (x:xs) = if x `elem` xs then False else checkUnique xs
@@ -79,9 +91,9 @@ isNFA :: (Eq s, Eq q) => Automaton s q -> Bool
 isNFA = not . isDFA
 
 isComplete :: (Eq s, Eq q) => Automaton s q -> Bool
-isComplete (Automaton sigma states _ _ deltas) = and $
+isComplete a@(Automaton sigma states _ _ deltas) = if not (isDFA a) then False else and $
                                                     flip elem deltas <$> -- Mask of existing delta
-                                                    [(Delta y x y) |
+                                                    [(Delta y x Nothing) |
                                                     x <- Set.elems sigma,
                                                     y <- Set.elems states] -- all posible deltas
 
