@@ -2,67 +2,68 @@ module Combinators where
 
   import Data.Char (isSpace)
   import qualified Prelude
-  import Prelude hiding (fail, fmap, (<*>), (>>=))
+  import Prelude hiding (fmap, (<*>), (>>=))
   import Control.Applicative (Alternative)
   import qualified Control.Applicative (empty, (<|>))
 
 
   -- Parsing result is some payload and a suffix of the input which is yet to be parsed
-  newtype Parser str ok = Parser { runParser :: str -> Maybe (str, ok) }
+  data Location = Location {line::Int, column::Int} deriving Show
+  data Stream token = Stream {stream::[token], position::Location}
+
+  initStream :: [token] -> Stream token
+  initStream token = Stream token (Location 0 0)
+
+  next :: Stream token -> Maybe token
+  next (Stream [] _) = Nothing
+  next (Stream (x:xs) _) = Just x
+
+  streamStep :: Stream Char -> Stream Char
+  streamStep (Stream (x:xs) (Location l c)) | x=='\n' = Stream xs (Location (l+1) 0)
+                                            | otherwise = Stream xs (Location l (c+1))
+  streamStep (Stream [] loc) = Stream [] loc
+
+  newtype Parser str ok = Parser { runParser :: Stream str -> Either [ParsingError String] (Stream str, ok) }
+
+  data ParsingError cause = ParseError {location::Location, cause::cause} deriving Show
+  buildError :: Stream tok -> cause -> [ParsingError cause]
+  buildError stream cause = [ParseError (position stream) cause]
 
   -- Parser which always succeedes consuming no input
   success :: ok -> Parser str ok
-  success ok = Parser $ \s -> Just (s, ok)
-
-  -- Parser which fails no mater the input
-  fail :: Parser str ok
-  fail = Parser $ const Nothing
+  success ok = Parser $ \s -> Right (s, ok)
 
   -- Biased choice: if the first parser succeedes, the second is never run
   (<|>) :: Parser str ok -> Parser str ok -> Parser str ok
   p <|> q = Parser $ \s ->
     case runParser p s of
-      Nothing -> runParser q s
+      Left e -> case runParser q s of
+        Left e' -> Left $ e ++ e'
+        x -> x
       x -> x
-
-  -- Default sequence combinator
-  -- If the first parser succeedes then the second parser is used
-  -- If the first does not succeed then the second one is never tried
-  -- The result is collected into a pair
-  seq :: Parser str a -> Parser str b -> Parser str (a, b)
-  p `seq` q = Parser $ \s ->
-    case runParser p s of
-      Nothing -> Nothing
-      Just (s', x) -> case runParser q s' of
-        Nothing -> Nothing
-        Just (s'', x') -> Just (s'', (x, x'))
 
 
   -- Monadic sequence combinator
   (>>=) :: Parser str a -> (a -> Parser str b) -> Parser str b
-  p >>= q = Parser $ \s ->
-    case runParser p s of
-      Nothing -> Nothing
-      Just (s', x) -> case runParser (q x) s' of
-        Nothing -> Nothing
-        Just (s'', x') -> Just (s'', x')
+  p >>= q = Parser $ \s -> case runParser p s of
+    Left e -> Left e
+    Right (s', a) -> case runParser (q a) s' of
+        Left e -> Left e
+        Right (s'', b) -> Right (s'', b)
 
   -- Applicative sequence combinator
   (<*>) :: Parser str (a -> b) -> Parser str a -> Parser str b
-  p <*> q = Parser $ \s ->
-    case runParser p s of
-      Nothing -> Nothing
-      Just (s', x) -> case runParser q s' of
-        Nothing -> Nothing
-        Just (s'', x') -> Just (s'', x x')
-
+  p <*> q = Parser $ \s -> case runParser p s of
+    Left  e -> Left e
+    Right (s', f) -> case runParser q s' of
+        Left  e -> Left e
+        Right (s'', a) -> Right (s'', f a)
 
   -- Applies a function to the parsing result, if parser succeedes
   fmap :: (a -> b) -> Parser str a -> Parser str b
-  fmap f p = Parser $ \s ->
-    case runParser p s of
-      Nothing -> Nothing
-      Just (s', a) -> Just (s', f a)
+  fmap f p = Parser $ \s -> case runParser p s of
+    Left e -> Left e
+    Right (s', a) -> Right (s', f a)
 
   -- Applies a parser once or more times
   some :: Parser str a -> Parser str [a]
@@ -78,21 +79,21 @@ module Combinators where
 
   buildTrie kws = foldl insert (Trie False []) kws
 
-  keywords :: [String] -> Parser String String
+  keywords :: [String] -> Parser Char String
   keywords = keywordsWithDelims (==' ')
 
-  keywordsWithDelims :: (Char -> Bool) -> [String] -> Parser String String
+  keywordsWithDelims :: (Char -> Bool) -> [String] -> Parser Char String
   keywordsWithDelims isDelim kws = Parser $ \s -> process s (buildTrie kws) ""
       where
-        process [] (Trie True _) str = Just ([], str)
-        process [] _ _ = Nothing
-        process (x:xs) trie str | isDelim x = processDelims (x:xs) trie str
-                                | otherwise = case step trie x of
-                                                Nothing -> Nothing
-                                                Just ve -> process xs ve (str ++ [x])
+        process s@(Stream [] loc) (Trie True _) str = Right (s, str)
+        process s@(Stream [] loc) _ _ = Left $ unexpectedToken s
+        process s@(Stream (x:xs) loc) trie str  | isDelim x = processDelims s trie str
+                                                | otherwise = case step trie x of
+                                                                Nothing -> Left $ unexpectedToken s
+                                                                Just ve -> process (streamStep s) ve (str ++ [x])
           where
-            processDelims (x:xs) (Trie True _) str = Just (x:xs, str)
-            processDelims (x:xs) _ _ = Nothing
+            processDelims stream (Trie True _) str = Right (stream, str)
+            processDelims stream _ _ = Left $ unexpectedToken stream
 
   data Trie key = Trie Bool [(key, Trie key)]
 
@@ -117,30 +118,44 @@ module Combinators where
     (<*>) = (<*>)
 
   instance Alternative (Parser s) where
-    empty = fail
+    empty = Parser $ \s -> Left $ buildError s "unknown error"
     (<|>) = (<|>)
 
   instance Prelude.Monad (Parser s) where
     return = pure
     (>>=) = (>>=)
-    fail = const fail
+    -- fail :: String -> Parser s a
+    fail cause = Parser $ \s -> Left $ buildError s cause
 
-  satisfy :: (token -> Bool) -> Parser [token] token
+  unexpectedToken :: Show token => (Stream token) -> [ParsingError String]
+  unexpectedToken s@(Stream (t:ts) loc) = buildError s $ "unexpected token: {" ++ show t ++ "}"
+  unexpectedToken s@(Stream [] loc) = buildError s $ "unexpected eof"
+
+  satisfy :: (Char -> Bool) -> Parser Char Char
   satisfy pr = Parser f
     where
-      f (c:cs) | pr c  = Just (cs,c)
-      f _              = Nothing
+      f s = let cur = next s in
+        case cur of
+          Nothing -> Left $ unexpectedToken s
+          Just c -> case pr c of
+                      True -> Right (streamStep s, c)
+                      False -> Left $ unexpectedToken s
 
-  end :: Parser [token] ()
+  end :: Show token => Parser token ()
   end = Parser $ \s -> case s of
-    [] -> Just ([], ())
-    _  -> Nothing
+    (Stream [] _) -> Right (s, ())
+    _  -> Left $ unexpectedToken s
 
-  try :: Parser String a -> Parser String (Maybe a)
+  try :: Parser Char a -> Parser Char (Maybe a)
   try prs = fmap Just prs <|> success Nothing
 
   spaces = many (satisfy isSpace)
-  parseList :: Parser String elem -> Parser String delim -> Parser String lbr -> Parser String rbr -> (Int -> Bool) -> Parser String [elem]
+  parseList ::  Parser Char elem ->
+                Parser Char delim ->
+                Parser Char lbr ->
+                Parser Char rbr ->
+                (Int -> Bool) ->
+                Parser Char [elem]
   parseList elem delim lbr rbr countPredicate =
     let parseItem = spaces *> elem <* (spaces) <* delim in
     let parseLast = spaces *> elem <* spaces in
@@ -157,6 +172,6 @@ module Combinators where
         if countPredicate (length res) then
           return res
         else
-          fail
+          fail $ "bad list size: " ++ show (length res)
 
 
