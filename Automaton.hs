@@ -11,7 +11,7 @@ import Data.Maybe (isNothing)
 type Set = Set.Set
 type Map = Map.Map
 
-data Delta s q = Delta q s (Maybe q) deriving Show
+data Delta s q = Delta q (Maybe s) (Maybe q) deriving Show
 
 instance (Eq s, Eq q) => Eq (Delta s q) where
     (Delta f s t) == (Delta f' s' t') = f==f' && s==s'
@@ -63,9 +63,9 @@ parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
 
             deltas <- automatonPartParser (deltaInnerParser elemsParser epsilonParser) (>=0)
             let delta = (\[x0, x1, x2] ->
-                    if x2 == "\\epsilon"
-                        then Delta x0 x1 Nothing
-                        else Delta x0 x1 (Just x2)) <$>
+                    if x1 == "\\epsilon"
+                        then Delta x0 Nothing (Just x2)
+                        else Delta x0 (Just x1) (Just x2)) <$>
                         deltas
             spaces
             end
@@ -76,24 +76,24 @@ parseAutomaton s = snd <$> runParser parserAutomaton (initStream s)
 
 checkDeltas states sigmas [] = True
 checkDeltas states sigmas ((s1:c:s2:[]):xs) = elem s1 states &&
-                                            (elem s2 states || s2=="\\epsilon") &&
-                                            elem c sigmas &&
+                                            elem s2 states &&
+                                            (elem c sigmas || c == "\\epsilon") &&
                                             checkDeltas states sigmas xs
 
 isDFA :: (Eq s, Eq q) => Automaton s q -> Bool
 isDFA (Automaton _ _ _ _ deltas) = checkUnique deltas &&
-                                    foldr (\(Delta f c t) r -> r && (not $ isNothing t)) True deltas
+                                    foldr (\(Delta f c t) r -> r && (not $ isNothing c)) True deltas
     where
     checkUnique :: (Eq s, Eq q) => [Delta s q] -> Bool
     checkUnique [] = True
     checkUnique (x:xs) = if x `elem` xs then False else checkUnique xs
 isNFA :: (Eq s, Eq q) => Automaton s q -> Bool
-isNFA = not . isDFA
+isNFA = const True
 
 isComplete :: (Eq s, Eq q) => Automaton s q -> Bool
 isComplete a@(Automaton sigma states _ _ deltas) = if not (isDFA a) then False else and $
                                                     flip elem deltas <$> -- Mask of existing delta
-                                                    [(Delta y x Nothing) |
+                                                    [(Delta y (Just x) Nothing) |
                                                     x <- Set.elems sigma,
                                                     y <- Set.elems states] -- all posible deltas
 
