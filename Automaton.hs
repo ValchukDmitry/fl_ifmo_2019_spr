@@ -5,7 +5,7 @@ import Combinators
 import qualified Data.Map.Lazy as Map
 import qualified Data.Set as Set
 import Data.Char
-import Data.List (sort)
+import Data.List (sort, union, nub, (\\), intersect, delete)
 import Data.Maybe (isNothing)
 
 type Set = Set.Set
@@ -98,5 +98,65 @@ isComplete a@(Automaton sigma states _ _ deltas) = if not (isDFA a) then False e
                                                     y <- Set.elems states] -- all posible deltas
 
 isMinimal = const True
+
+makeComplete :: Automaton String String -> Automaton String String
+makeComplete a@(Automaton sigma stts initState termState delta) | isComplete a = a
+                                                                | otherwise =
+    let newStates = (devilState stts) `Set.insert` stts in
+        Automaton sigma newStates initState termState (calcNewDelta newStates delta (devilState stts))
+        where
+            devilState st = '_':(concat st)
+            calcNewDelta :: Set String -> [Delta String String] -> String -> [Delta String String]
+            calcNewDelta st' delta devilState =
+                delta `union` [(Delta y (Just x) (Just devilState)) | x <- Set.elems sigma, y <- Set.elems st']
+
+makeDFA :: Automaton String String -> Automaton String String
+makeDFA a@(Automaton sigma stts initState termState delta) | isDFA a = a
+                                                           | otherwise =
+    let states = []
+        deltas = []
+        newInitState = initState
+        termState = []
+        (newStates, newTermStates, newDelta) = processUnprocessed [[initState]] [(Set.elems stts)] termState delta [] [[initState]]
+    in
+        Automaton sigma (Set.fromList newStates) initState (Set.fromList newTermStates) newDelta
+         where
+
+            processUnprocessed :: [[String]] -> [[String]] -> [String] -> [Delta String String] -> [Delta String [String]] -> [[String]] -> ([String], [String], [Delta String String])
+            processUnprocessed [] states termState delta newDelta newStates =
+                (map (\x -> concat x) newStates, getTermStates termState newStates, map (\(Delta f (Just c) (Just t)) -> Delta (concat f) (Just c) (Just $ concat t)) newDelta)
+
+            processUnprocessed (st:sts) states termState delta newDelta newStates =
+                let (currentNewStates, newDeltas) = processState st st delta ([], [])
+                    actuallyNew = (currentNewStates \\ newStates)
+                    actuallyNewDeltas = (newDelta \\ newDeltas) in
+                        processUnprocessed (sts ++ actuallyNew) states termState delta (nub $ newDelta ++ actuallyNewDeltas) (nub $ newStates ++ actuallyNew)
+
+            getTermStates term newStates = map (\x -> concat x) $ filter (\x -> (length $ x `intersect` term) > 1) newStates
+
+            processState :: [String] -> [String] -> [Delta String String] -> ([[String]], [Delta String [String]]) -> ([[String]], [Delta String [String]])
+            processState startState [] delta result = result
+            processState startState (s:st) delta result =
+                let currentState = delete s startState
+                    (resultStates, resultDelta) = result
+                    newStates = nub $ map (\(Delta f (Just c) (Just t)) -> (sort (nub $ t:currentState))) $ filter (\(Delta f c t) -> f==s) delta
+                    newDelta = map (\(Delta f (Just c) (Just t)) -> (Delta startState (Just c) (Just (sort (nub $ t:currentState))))) $ filter (\(Delta f c t) -> f == s) delta
+                in
+                    processState startState st delta ((nub $ (resultStates ++ newStates)), newDelta)
+
+epsClosure :: (Eq s, Eq q) => Automaton s q -> Automaton s q
+epsClosure a@(Automaton sigma stts initState termState delta) | foldr (\(Delta f c t) r -> r && (not $ isNothing c)) True delta == True = a
+                                                              | otherwise =
+    let epsEdges = filter (\(Delta f c t) -> (isNothing c)) delta
+    in
+        Automaton sigma stts initState termState (nub $ calcEpsDelta (Set.elems stts) epsEdges delta)
+    where
+        calcEpsDelta [] epsilonEdges delta = []
+        calcEpsDelta allStates@(s:sts) epsilonEdges delta = nub ((map (\(Delta f c t) -> Delta s c t) $
+            getNextState allStates epsilonEdges $
+            map (\(Delta _ _ (Just t)) -> t) $ filter (\(Delta f _ _) -> f==s) epsilonEdges)
+            ++ calcEpsDelta sts epsilonEdges delta)
+        getNextState states edges epsilonStates = filter (\(Delta f c (Just t)) -> f `elem` epsilonStates) edges
+
 
 
