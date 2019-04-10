@@ -12,7 +12,7 @@ main = do
         input <- readFile fileName
         let a = parseExpression input
         putStrLn $ printf "Parsing %s\n" fileName
-        putStrLn $ either id show a
+        putStrLn $ either (concatMap show) show a
         putStrLn ""
     )
     fileNames
