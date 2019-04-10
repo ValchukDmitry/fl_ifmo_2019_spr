@@ -2,6 +2,7 @@ module Expression where
 
 import Text.Printf
 import Combinators
+import Data.Bits
 
 data Operator = Pow
               | Mul
@@ -23,15 +24,14 @@ data EAst a = BinOp Operator (EAst a) (EAst a)
 
 -- Change the signature if necessary
 -- Constructs AST for the input expression
-parseExpression :: String -> Either String (EAst Integer)
-parseExpression input = 
-  runParserUntilEof (expression undefined undefined) input
+parseExpression :: String -> Either [ParsingError String] (EAst Integer)
+parseExpression input = runParserUntilEof (expression operatorsAST (Primary <$> intParser)) input
 
 -- Change the signature if necessary
 -- Calculates the value of the input expression
-executeExpression :: String -> Either String Integer
-executeExpression input = 
-  runParserUntilEof (expression undefined undefined) input
+executeExpression :: String -> Either [ParsingError String] Integer
+executeExpression input =
+  runParserUntilEof (expression operatorsCalc intParser) input
 
 instance Show Operator where
   show Pow   = "^"
@@ -54,8 +54,8 @@ instance Show a => Show (EAst a) where
       show' n t =
         (if n > 0 then printf "%s|_%s" (concat (replicate (n - 1) "| ")) else id)
         (case t of
-                  BinOp op l r -> printf "%s\n%s\n%s" (show op) (show' (ident n) l) (show' (ident n) r)
-                  Primary x -> show x)
+                  BinOp op l r -> printf "%s\n%s\n%s" (Prelude.show op) (show' (ident n) l) (show' (ident n) r)
+                  Primary x -> Prelude.show x)
       ident = (+1)
 
 {-
@@ -69,3 +69,53 @@ show (BinOp Conj (BinOp Pow (Primary 1) (BinOp Sum (Primary 2) (Primary 3))) (Pr
 | | |_3
 |_4
 -}
+
+
+operatorsAST =
+  [
+    (LAssoc, [ (string "||", BinOp Disj)]),
+    (RAssoc, [ (string "&&", BinOp Conj)]),
+    (NAssoc, [
+      (string "==", BinOp Eq),
+      (string "!=", BinOp Neq),
+      (string "<", BinOp Lt),
+      (string ">", BinOp Gt),
+      (string "<=", BinOp Le),
+      (string ">=", BinOp Gt)
+    ]),
+    (LAssoc, [
+      (string "+", BinOp Sum),
+      (string "-", BinOp Minus)
+    ]),
+    (LAssoc, [
+      (string "*", BinOp Mul),
+      (string "/", BinOp Div)
+    ]),
+    (RAssoc, [ (string "^", BinOp Pow) ])
+  ]
+
+predicate :: (Integer -> Integer -> Bool) -> Integer -> Integer -> Integer
+predicate f a b = if f a b then 1 else 0
+
+operatorsCalc =
+  [
+    (LAssoc, [ (string "||", (.|.)) ]),
+    (RAssoc, [ (string "&&", (.&.)) ]),
+    (NAssoc, [
+      (string "==", predicate (==)),
+      (string "!=", predicate (/=)),
+      (string "<=", predicate (<=)),
+      (string "<", predicate (<)),
+      (string ">=", predicate (>=)),
+      (string ">", predicate (>))
+    ]),
+    (LAssoc, [
+      (string "+", (+)),
+      (string "-", (-))
+    ]),
+    (LAssoc, [
+      (string "*", (*)),
+      (string "/", div)
+    ]),
+    (RAssoc, [ (string "^", (^)) ])
+  ]

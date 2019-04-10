@@ -13,8 +13,8 @@ main = do
         let a = parseExpression input
         let r = executeExpression input
         putStrLn $ printf "Parsing %s\n" fileName
-        putStrLn $ either id show a
-        putStrLn $ either id show r
+        putStrLn $ either (concatMap show) show a
+        putStrLn $ either (concatMap show) show r
         putStrLn ""
     )
     fileNames
