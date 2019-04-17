@@ -25,13 +25,13 @@ module Expression where
   -- Change the signature if necessary
   -- Constructs AST for the input expression
   parseExpression :: String -> Either [ParsingError String] (EAst Integer)
-  parseExpression input = runParserUntilEof (expression listOfOperatorsForEAst primaryForEAst) input
+  parseExpression input = runParserUntilEof (expression operatorsAST (Primary <$> intParser)) input
 
   -- Change the signature if necessary
   -- Calculates the value of the input expression
   executeExpression :: String -> Either [ParsingError String] Integer
   executeExpression input =
-    runParserUntilEof (expression listOfOperatorsForInteger primaryForInteger) input
+    runParserUntilEof (expression operatorsCalc intParser) input
 
   instance Show Operator where
     show Pow   = "^"
@@ -71,17 +71,17 @@ module Expression where
   -}
 
 
-  listOfOperatorsForEAst =
+  operatorsAST =
     [
       (LAssoc, [ (string "||", BinOp Disj)]),
       (RAssoc, [ (string "&&", BinOp Conj)]),
       (NAssoc, [
+        (string "<=", BinOp Le),
+        (string ">=", BinOp Gt),
         (string "==", BinOp Eq),
         (string "!=", BinOp Neq),
         (string "<", BinOp Lt),
-        (string ">", BinOp Gt),
-        (string "<=", BinOp Le),
-        (string ">=", BinOp Gt)
+        (string ">", BinOp Gt)
       ]),
       (LAssoc, [
         (string "+", BinOp Sum),
@@ -94,16 +94,10 @@ module Expression where
       (RAssoc, [ (string "^", BinOp Pow) ])
     ]
 
-  primaryForEAst = pDigit
-
-
-  pDigit :: Parser Char (EAst Integer)
-  pDigit = Primary <$> digitsInt
-
   predicate :: (Integer -> Integer -> Bool) -> Integer -> Integer -> Integer
   predicate f a b = if f a b then 1 else 0
 
-  listOfOperatorsForInteger =
+  operatorsCalc =
     [
       (LAssoc, [ (string "||", (.|.)) ]),
       (RAssoc, [ (string "&&", (.&.)) ]),
@@ -125,5 +119,3 @@ module Expression where
       ]),
       (RAssoc, [ (string "^", (^)) ])
     ]
-
-  primaryForInteger = digitsInt
