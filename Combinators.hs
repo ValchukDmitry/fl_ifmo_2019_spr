@@ -18,42 +18,47 @@ module Combinators where
   -- Binary operators are listed in the order of precedence (from lower to higher)
   -- Binary operators on the same level of precedence have the same associativity
   -- Binary operator is specified with a parser for the operator itself and a semantic function to apply to the operands
-  expression :: [(Assoc, [(Parser str b, a -> a -> a)])] ->
-                Parser str a ->
-                Parser str a
-  expression ops primary = foldr (\(associativity, operators) acc -> process associativity operators acc) primary ops
+  expression :: [(Assoc, [(Parser Char b, a -> a -> a)])] ->
+                Parser Char a ->
+                Parser Char a
+  expression ops primary =  parser'
     where
-      process:: Assoc -> [(Parser str b, a -> a -> a)] -> Parser str a -> Parser str a
-      process associativity = case associativity of
+      parser p op = foldr (\(associativity, operators) acc -> process associativity operators acc) p op
+      parser' = parser ((string "(" *>  spaces *>  parser' <*  spaces <*  string ")") <|> primary) ops
+
+      -- process:: Assoc -> [(Parser Char b, a -> a -> a)] -> Parser Char a -> Parser Char a
+      process associativity =
+        case associativity of
           LAssoc -> processLeft
           RAssoc -> processRight
           NAssoc -> processNvm
 
-      processLeft :: [(Parser str b, a -> a -> a)] -> Parser str a -> Parser str a
+      -- processLeft :: [(Parser Char b, a -> a -> a)] -> Parser Char a -> Parser Char a
       processLeft operators primary = do
-          left <- primary
+          left <- spaces *> primary <* spaces
           let constr = fmap (\(parser, op) -> parser *> pure op) operators
           let constr' = foldr1 (\parser acc -> parser <|> acc) constr
-          right <- many $ fmap flip constr' <*> primary
+          right <- spaces *> (many $ fmap flip constr' <*> primary) <* spaces
           return $ foldl (flip ($)) left right
+          <|> primary
 
-      processRight :: [(Parser str b, a -> a -> a)] -> Parser str a -> Parser str a
+      -- processRight :: [(Parser Char b, a -> a -> a)] -> Parser Char a -> Parser Char a
       processRight operators primary = do
-          left <- primary
+          left <- spaces *> primary
           let constr = fmap (\(parser, op) -> parser *> pure op) operators
           let constr' = foldr1 (<|>) constr
-          op <- constr'
-          right <- processRight operators primary
+          op <- spaces *> constr'
+          right <- spaces *> processRight operators primary
           return (op left right)
           <|> primary
 
-      processNvm :: [(Parser str b, a -> a -> a)] -> Parser str a -> Parser str a
+      -- processNvm :: [(Parser Char b, a -> a -> a)] -> Parser Char a -> Parser Char a
       processNvm operators primary = do
-          left <- primary
+          left <- spaces *> primary
           let constr = fmap (\(parser, op) -> parser *> pure op) operators
           let constr' = foldr1 (<|>) constr
-          op <- constr'
-          right <- primary
+          op <- spaces *> constr' <* spaces
+          right <- spaces *> primary
           return (op left right)
           <|> primary
 
@@ -234,8 +239,11 @@ module Combinators where
   char :: Char -> Parser Char Char
   char letter = satisfy (== letter)
 
+  charC :: Char -> Parser Char Char
+  charC = char
+
   string :: String -> Parser Char String
-  string = foldr (\a b -> pure (:) <*> char a <*> b) (pure [])
+  string = foldr (\a b -> pure (:) <*> charC a <*> b) (pure [])
 
   digit :: Parser Char Char
   digit = satisfy (isDigit)

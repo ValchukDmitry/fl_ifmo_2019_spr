@@ -76,12 +76,12 @@ operatorsAST =
     (LAssoc, [ (string "||", BinOp Disj)]),
     (RAssoc, [ (string "&&", BinOp Conj)]),
     (NAssoc, [
+      (string "<=", BinOp Le),
+      (string ">=", BinOp Gt),
       (string "==", BinOp Eq),
       (string "!=", BinOp Neq),
       (string "<", BinOp Lt),
-      (string ">", BinOp Gt),
-      (string "<=", BinOp Le),
-      (string ">=", BinOp Gt)
+      (string ">", BinOp Gt)
     ]),
     (LAssoc, [
       (string "+", BinOp Sum),
