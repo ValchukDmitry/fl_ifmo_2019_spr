@@ -73,7 +73,7 @@ show (BinOp Conj (BinOp Pow (Primary 1) (BinOp Sum (Primary 2) (Primary 3))) (Pr
 
 operatorsAST =
   [
-    (LAssoc, [ (string "||", BinOp Disj)]),
+    (RAssoc, [ (string "||", BinOp Disj)]),
     (RAssoc, [ (string "&&", BinOp Conj)]),
     (NAssoc, [
       (string "<=", BinOp Le),
@@ -99,7 +99,7 @@ predicate f a b = if f a b then 1 else 0
 
 operatorsCalc =
   [
-    (LAssoc, [ (string "||", (.|.)) ]),
+    (RAssoc, [ (string "||", (.|.)) ]),
     (RAssoc, [ (string "&&", (.&.)) ]),
     (NAssoc, [
       (string "==", predicate (==)),
