@@ -1,5 +1,5 @@
 module Combinators where
-  import Data.Char (isSpace, isDigit, digitToInt)
+  import Data.Char (isSpace, isDigit, digitToInt, isLetter)
   import Data.Foldable (toList)
   import qualified Prelude
   import Prelude hiding ((<*>), (>>=))
@@ -18,13 +18,23 @@ module Combinators where
   -- Binary operators are listed in the order of precedence (from lower to higher)
   -- Binary operators on the same level of precedence have the same associativity
   -- Binary operator is specified with a parser for the operator itself and a semantic function to apply to the operands
-  expression :: [(Assoc, [(Parser Char b, a -> a -> a)])] ->
+  expression :: [(Parser Char b, a -> a)] ->
+                [(Assoc, [(Parser Char b, a -> a -> a)])] ->
+                (String -> a) ->
                 Parser Char a ->
                 Parser Char a
-  expression ops primary = (parser (primary <|> brackets) ops) <|> parser'
+  expression unops ops var primary' =
+      (parser (primary <|> brackets) unops ops) <|> parser'
     where
-      parser p op = foldr (\(associativity, operators) acc -> process associativity operators acc) p op
-      parser' = brackets <|> (spaces *> parser (primary <|> brackets) ops <* spaces)
+      primary = processUn unops (brackets <|> primary' <|> variable)
+
+      variable = do
+        namePrefix <- (letter <|> char '_')
+        nameSuffix <- many (letter <|> digit)
+        return $ var ([namePrefix] ++ nameSuffix)
+
+      parser p unops op = foldr (\(associativity, operators) acc -> process associativity operators acc) p op
+      parser' = brackets <|> (spaces *> parser (primary <|> brackets) unops ops <* spaces)
 
       brackets = spaces *> string "(" *>  spaces *>  parser' <*  spaces <*  string ")" <* spaces
 
@@ -34,6 +44,15 @@ module Combinators where
           LAssoc -> processLeft
           RAssoc -> processRight
           NAssoc -> processNvm
+
+      -- processUn :: [(Parser Char b, a -> a)] -> Parser Char a -> Parser Char a
+      processUn operators primary = do
+        let constr = fmap (\(parser, op) -> spaces *> parser  *> spaces *> pure op) operators
+        let constr' = foldr1 (<|>) constr
+        op <- spaces *> constr' <* spaces
+        right <- spaces *> (primary) <* spaces
+        return (op right)
+        <|> primary
 
       -- processLeft :: [(Parser Char b, a -> a -> a)] -> Parser Char a -> Parser Char a
       processLeft operators primary = do
@@ -239,6 +258,9 @@ module Combinators where
 
   char :: Char -> Parser Char Char
   char letter = satisfy (== letter)
+
+  letter :: Parser Char Char
+  letter = satisfy isLetter
 
   charC :: Char -> Parser Char Char
   charC = char

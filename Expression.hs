@@ -18,20 +18,27 @@ data Operator = Pow
               | Conj
               | Disj
 
+data UnOperator = UnMinus
+                | Not
+
 -- Simplest abstract syntax tree for expressions: only binops are allowed
 data EAst a = BinOp Operator (EAst a) (EAst a)
+            | UnOp UnOperator (EAst a)
             | Primary a
+            | Var String
 
 -- Change the signature if necessary
 -- Constructs AST for the input expression
 parseExpression :: String -> Either [ParsingError String] (EAst Integer)
-parseExpression input = runParserUntilEof (expression operatorsAST (Primary <$> intParser)) input
+parseExpression input = runParserUntilEof (expression unOperatorsAST operatorsAST Var (Primary <$> intParser)) input
 
 -- Change the signature if necessary
 -- Calculates the value of the input expression
-executeExpression :: String -> Either [ParsingError String] Integer
+-- executeExpression :: String -> Either [ParsingError String] Integer
 executeExpression input =
-  runParserUntilEof (expression operatorsCalc intParser) input
+  runParserUntilEof (expression unOperatorsCalc operatorsCalc varFunction intParser) input
+
+varFunction x = if x == "x" then 1 else 2
 
 instance Show Operator where
   show Pow   = "^"
@@ -48,6 +55,10 @@ instance Show Operator where
   show Conj  = "&&"
   show Disj  = "||"
 
+instance Show UnOperator where
+  show UnMinus = "-"
+  show Not = "!"
+
 instance Show a => Show (EAst a) where
   show = show' 0
     where
@@ -55,7 +66,10 @@ instance Show a => Show (EAst a) where
         (if n > 0 then printf "%s|_%s" (concat (replicate (n - 1) "| ")) else id)
         (case t of
                   BinOp op l r -> printf "%s\n%s\n%s" (Prelude.show op) (show' (ident n) l) (show' (ident n) r)
-                  Primary x -> Prelude.show x)
+                  UnOp op x -> printf "%s\n%s" (Prelude.show op) (show' (ident n) x)
+                  Primary x -> Prelude.show x
+                  Var x -> Prelude.show x
+                  )
       ident = (+1)
 
 {-
@@ -70,6 +84,11 @@ show (BinOp Conj (BinOp Pow (Primary 1) (BinOp Sum (Primary 2) (Primary 3))) (Pr
 |_4
 -}
 
+unOperatorsAST =
+  [
+    (string "-", UnOp UnMinus),
+    (string "!", UnOp Not)
+  ]
 
 operatorsAST =
   [
@@ -96,6 +115,12 @@ operatorsAST =
 
 predicate :: (Integer -> Integer -> Bool) -> Integer -> Integer -> Integer
 predicate f a b = if f a b then 1 else 0
+
+unOperatorsCalc =
+  [
+    (string "-", \x-> -x),
+    (string "!", \x -> if x > 0 then 0 else 1)
+  ]
 
 operatorsCalc =
   [
