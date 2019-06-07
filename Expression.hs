@@ -77,7 +77,7 @@ operatorsAST =
     (RAssoc, [ (string "&&", BinOp Conj)]),
     (NAssoc, [
       (string "<=", BinOp Le),
-      (string ">=", BinOp Gt),
+      (string ">=", BinOp Ge),
       (string "==", BinOp Eq),
       (string "!=", BinOp Neq),
       (string "<", BinOp Lt),
